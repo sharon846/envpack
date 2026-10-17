@@ -1,211 +1,256 @@
 """Tests for GymPacmanEnv."""
 
 import unittest
+from collections import deque
+
 import numpy as np
 
 import gymnasium as gym
 from gymnasium.utils.env_checker import check_env
-from envpack.envs.game_pacman.env import GymPacmanEnv, UP, DOWN, LEFT, RIGHT, MAZE_LAYOUT, POWER_PELLETS_START
+from envpack.envs.game_pacman.env import (
+    GymPacmanEnv,
+    MAZES,
+    UP,
+    DOWN,
+    LEFT,
+    RIGHT,
+    CHASER,
+    AMBUSHER,
+)
+
+SIZES = sorted(MAZES)
 
 
 class TestGymPacmanEnv(unittest.TestCase):
     """Tests for the GymPacmanEnv Gymnasium environment."""
 
     def test_gym_compliance(self):
-        """Test Gymnasium compliance using check_env."""
-        env = GymPacmanEnv()
-        check_env(env, skip_render_check=True)
+        """Test Gymnasium compliance using check_env for every maze size."""
+        for size in SIZES:
+            with self.subTest(size=size):
+                check_env(GymPacmanEnv(maze_size=size), skip_render_check=True)
+
+    def test_gym_make(self):
+        """Test the registered id accepts maze_size."""
+        import envpack  # noqa: F401  (registers the envs)
+
+        env = gym.make("envpack/Pacman-v0", maze_size=7)
+        obs, _ = env.reset(seed=0)
+        self.assertEqual(obs["walls"].shape, (7, 7))
+
+    def test_invalid_maze_size(self):
+        with self.assertRaises(ValueError):
+            GymPacmanEnv(maze_size=9)
 
     def test_initial_state(self):
-        """Test that the initial state is correct after reset."""
-        env = GymPacmanEnv()
-        obs, info = env.reset()
+        """Test the observation structure and initial state for every size."""
+        for size in SIZES:
+            with self.subTest(size=size):
+                env = GymPacmanEnv(maze_size=size)
+                obs, info = env.reset(seed=0)
+                config = MAZES[size]
 
-        # Check observation structure
-        self.assertIn("observation", obs)
-        self.assertIn("valid_mask", obs)
-        self.assertIn("score", obs)
-        self.assertIn("lives", obs)
+                self.assertEqual(
+                    set(obs),
+                    {"walls", "pellets", "pacman_position", "pacman_direction", "ghost_positions"},
+                )
+                self.assertEqual(obs["walls"].shape, (size, size))
+                self.assertEqual(obs["walls"].dtype, np.int8)
+                self.assertEqual(obs["pellets"].shape, (size, size))
+                self.assertEqual(obs["pellets"].dtype, np.int8)
+                self.assertEqual(obs["pacman_position"].shape, (2,))
+                self.assertEqual(obs["pacman_position"].dtype, np.int32)
+                self.assertEqual(obs["ghost_positions"].shape, (2, 2))
+                self.assertEqual(obs["ghost_positions"].dtype, np.int32)
+                self.assertTrue(env.observation_space.contains(obs))
 
-        # Check observation shapes and dtypes
-        self.assertEqual(obs["observation"].shape, (300, 400, 3))
-        self.assertEqual(obs["observation"].dtype, np.uint8)
-        self.assertEqual(obs["valid_mask"].shape, (4,))
-        self.assertEqual(obs["valid_mask"].dtype, np.int8)
-        self.assertEqual(obs["score"].shape, (1,))
-        self.assertEqual(obs["score"].dtype, np.int32)
-        self.assertEqual(obs["lives"].shape, (1,))
-        self.assertEqual(obs["lives"].dtype, np.int32)
+                np.testing.assert_array_equal(obs["walls"], np.array(config["layout"]))
+                self.assertEqual(tuple(obs["pacman_position"]), config["pacman_start"])
+                self.assertEqual(obs["pacman_direction"], LEFT)
+                self.assertEqual([tuple(p) for p in obs["ghost_positions"]], config["ghost_starts"])
 
-        # Defaults
-        self.assertEqual(env.score, 0)
-        self.assertEqual(env.lives, 3)
-        self.assertEqual(env.frightened_timer, 0)
-        self.assertEqual(env.pacman_pos, (13, 7))
+                # Pellets on every open cell except Pacman's start
+                expected = 1 - obs["walls"]
+                expected[config["pacman_start"]] = 0
+                np.testing.assert_array_equal(obs["pellets"], expected)
+                self.assertEqual(info["pellets_eaten"], 0)
+                self.assertEqual(info["pellets_total"], int(expected.sum()))
+                self.assertIsNone(info["termination_reason"])
 
-    def test_movement_and_wall_collision(self):
-        """Test Pacman movement and wall blocking."""
-        env = GymPacmanEnv()
-        env.reset()
-        
-        # Pacman starts at (13, 7) moving RIGHT.
-        # In MAZE_LAYOUT:
-        # Row 13 is: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
-        # (13, 7) is open. Moving LEFT (2) should go to (13, 6).
-        obs, reward, term, trunc, info = env.step(LEFT)
-        self.assertEqual(env.pacman_pos, (13, 6))
-        self.assertEqual(env.pacman_dir, LEFT)
+    def test_mazes_connected_without_dead_ends(self):
+        """Every open cell is reachable from the start and has at least 2 exits."""
+        for size in SIZES:
+            with self.subTest(size=size):
+                layout = np.array(MAZES[size]["layout"])
+                open_cells = {tuple(c) for c in np.argwhere(layout == 0)}
 
-        # Let's verify valid_mask at (13, 6):
-        # Left neighbor (13, 5): 0 (valid)
-        # Right neighbor (13, 7): 0 (valid)
-        # Up neighbor (12, 6): MAZE_LAYOUT[12][6] is 0
-        # Down neighbor (14, 6): MAZE_LAYOUT[14][6] is 1 (wall)
-        # So valid mask should be UP=1, DOWN=0, LEFT=1, RIGHT=1
-        mask = env._get_valid_mask()
-        self.assertEqual(mask[UP], 1)
-        self.assertEqual(mask[DOWN], 0)
-        self.assertEqual(mask[LEFT], 1)
-        self.assertEqual(mask[RIGHT], 1)
+                def neighbors(cell):
+                    r, c = cell
+                    return [n for n in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)] if n in open_cells]
 
-        # Move UP into (12, 6). MAZE_LAYOUT[12][6] is 0.
-        env.step(UP)
-        self.assertEqual(env.pacman_pos, (12, 6))
+                start = MAZES[size]["pacman_start"]
+                seen = {start}
+                queue = deque([start])
+                while queue:
+                    for n in neighbors(queue.popleft()):
+                        if n not in seen:
+                            seen.add(n)
+                            queue.append(n)
+                self.assertEqual(seen, open_cells)
+                for cell in open_cells:
+                    self.assertGreaterEqual(len(neighbors(cell)), 2, cell)
+                for g in MAZES[size]["ghost_starts"]:
+                    self.assertIn(g, open_cells)
 
-        # Trying to move LEFT into (12, 5) which is MAZE_LAYOUT[12][5] = 1 (wall).
-        # This action is invalid, so Pacman continues in current direction (UP) if possible.
-        # Up neighbor of (12, 6) is (11, 6). MAZE_LAYOUT[11][6] is 0. So it should move UP.
-        env.step(LEFT)
-        self.assertEqual(env.pacman_pos, (11, 6))
-
-    def test_custom_state_inject(self):
-        """Test resetting the environment with a custom state injected."""
-        env = GymPacmanEnv()
+    def _state(self, **overrides):
         state = {
-            "pacman_pos": (4, 4),
+            "pacman_pos": (3, 3),
             "pacman_dir": LEFT,
-            "ghosts": [
-                {"name": "Blinky", "pos": (1, 1), "dir": RIGHT, "start_pos": (7, 7)},
-            ],
-            "dots": [(4, 5), (4, 6)],
-            "power_pellets": [(1, 1)],
-            "score": 120,
-            "lives": 2,
-            "frightened_timer": 15,
+            "ghost_positions": [(1, 1), (1, 5)],
+            "pellets": [(5, 5)],
         }
-        obs, info = env.reset(options={"state": state})
-        self.assertEqual(env.pacman_pos, (4, 4))
+        state.update(overrides)
+        return state
+
+    def test_wall_keeps_pacman_in_place(self):
+        env = GymPacmanEnv(maze_size=7, ghost_speed=0.0)
+        # (5, 3) has a wall below it at (6, 3).
+        env.reset(options={"state": self._state(pacman_pos=(5, 3), pacman_dir=LEFT)})
+        obs, reward, term, trunc, info = env.step(DOWN)
+        self.assertEqual(env.pacman_pos, (5, 3))
         self.assertEqual(env.pacman_dir, LEFT)
-        self.assertEqual(len(env.ghosts), 1)
-        self.assertEqual(env.ghosts[0]["name"], "Blinky")
-        self.assertEqual(env.ghosts[0]["pos"], (1, 1))
-        self.assertEqual(env.dots, {(4, 5), (4, 6)})
-        self.assertEqual(env.power_pellets, {(1, 1)})
-        self.assertEqual(env.score, 120)
-        self.assertEqual(env.lives, 2)
-        self.assertEqual(env.frightened_timer, 15)
+        self.assertEqual(info["action_mask"][DOWN], 0)
+        self.assertAlmostEqual(reward, -0.01)
 
-    def test_dot_and_pellet_consumption(self):
-        """Test score increases and frightened mode transition on eating pellets."""
-        env = GymPacmanEnv()
-        state = {
-            "pacman_pos": (4, 4),
-            "pacman_dir": RIGHT,
-            "ghosts": [],
-            "dots": [(4, 5), (1, 2)],  # (1, 2) is a dummy dot to prevent level clear
-            "power_pellets": [(4, 6)],
-            "score": 0,
-            "lives": 3,
-            "frightened_timer": 0,
-        }
-        env.reset(options={"state": state})
-
-        # Step 1: Move right to eat dot
+    def test_pellet_reward(self):
+        env = GymPacmanEnv(maze_size=7, ghost_speed=0.0)
+        env.reset(options={"state": self._state(pellets=[(3, 4), (5, 5)])})
         obs, reward, term, trunc, info = env.step(RIGHT)
-        self.assertEqual(env.pacman_pos, (4, 5))
-        self.assertEqual(env.score, 10)
-        self.assertNotIn((4, 5), env.dots)
+        self.assertEqual(env.pacman_pos, (3, 4))
+        self.assertEqual(env.pacman_dir, RIGHT)
+        self.assertEqual(obs["pellets"][3, 4], 0)
         self.assertAlmostEqual(reward, 10.0 - 0.01)
+        self.assertFalse(term)
+        self.assertEqual(info["score"], 10)
 
-        # Step 2: Move right to eat power pellet
+    def test_clear_maze(self):
+        env = GymPacmanEnv(maze_size=7, ghost_speed=0.0)
+        env.reset(options={"state": self._state(pellets=[(3, 4)])})
         obs, reward, term, trunc, info = env.step(RIGHT)
-        self.assertEqual(env.pacman_pos, (4, 6))
-        self.assertEqual(env.score, 60) # 10 + 50
-        self.assertNotIn((4, 6), env.power_pellets)
-        self.assertEqual(env.frightened_timer, 40)
-        self.assertAlmostEqual(reward, 50.0 - 0.01)
+        self.assertTrue(term)
+        self.assertFalse(trunc)
+        self.assertEqual(info["termination_reason"], "cleared")
+        self.assertAlmostEqual(reward, 510.0 - 0.01)
 
-    def test_ghost_combat(self):
-        """Test Pacman eating frightened ghost, and dying to normal ghost."""
-        env = GymPacmanEnv()
-        
-        # 1. Normal ghost collision: Pacman dies
-        state = {
-            "pacman_pos": (4, 4),
+    def test_caught_walking_into_ghost(self):
+        env = GymPacmanEnv(maze_size=7, ghost_speed=0.0)
+        env.reset(options={"state": self._state(ghost_positions=[(3, 4), (1, 1)])})
+        obs, reward, term, trunc, info = env.step(RIGHT)
+        self.assertTrue(term)
+        self.assertEqual(info["termination_reason"], "caught")
+        self.assertAlmostEqual(reward, -100.0 - 0.01)
+
+    def test_caught_by_ghost_move(self):
+        env = GymPacmanEnv(maze_size=7, ghost_speed=1.0)
+        # Pacman (3, 3) -> (3, 4); Chaser (3, 5) -> (3, 4): caught after ghosts move.
+        env.reset(seed=0, options={"state": self._state(ghost_positions=[(3, 5), (1, 1)])})
+        _, _, term, _, info = env.step(RIGHT)
+        self.assertTrue(term)
+        self.assertEqual(info["termination_reason"], "caught")
+
+        # Pacman at (1, 3) pushes UP into a wall and stays; Chaser at (1, 4) moves in.
+        env.reset(seed=0, options={"state": self._state(pacman_pos=(1, 3), ghost_positions=[(1, 4), (5, 1)])})
+        _, reward, term, _, info = env.step(UP)
+        self.assertTrue(term)
+        self.assertEqual(info["termination_reason"], "caught")
+        self.assertAlmostEqual(reward, -100.0 - 0.01)
+
+    def test_chaser_closes_distance(self):
+        env = GymPacmanEnv(maze_size=15, ghost_speed=1.0)
+        env.reset(seed=0, options={"state": {
+            "pacman_pos": (13, 1),
+            "pacman_dir": LEFT,
+            "ghost_positions": [(1, 13), (1, 1)],
+            "pellets": [(1, 2)],
+        }})
+        prev = env._dist[env.ghost_positions[CHASER]][env.pacman_pos]
+        for _ in range(5):
+            env.step(LEFT)  # Pacman is in a corner facing a wall: stays put
+            cur = env._dist[env.ghost_positions[CHASER]][env.pacman_pos]
+            self.assertEqual(cur, prev - 1)
+            prev = cur
+
+    def test_ambusher_targets_ahead_of_pacman(self):
+        env = GymPacmanEnv(maze_size=15)
+        env.reset(options={"state": {
+            "pacman_pos": (10, 4),
             "pacman_dir": RIGHT,
-            "ghosts": [
-                {"name": "Blinky", "pos": (4, 5), "dir": LEFT, "start_pos": (7, 7)},
-            ],
-            "dots": [],
-            "power_pellets": [],
-            "score": 0,
-            "lives": 3,
-            "frightened_timer": 0,
-        }
-        env.reset(options={"state": state})
-        
-        # Step: Pacman moves RIGHT, Blinky moves LEFT (or towards Pacman). They collide.
-        obs, reward, term, trunc, info = env.step(RIGHT)
-        self.assertEqual(env.lives, 2)
-        # Pacman should be reset to PACMAN_START
-        self.assertEqual(env.pacman_pos, (13, 7))
-        # Blinky should be reset to its start_pos
-        self.assertEqual(env.ghosts[0]["pos"], (7, 7))
+            "ghost_positions": [(1, 1), (1, 13)],
+            "pellets": [(1, 2)],
+        }})
+        self.assertEqual(env._ambusher_target((1, 13)), (10, 8))
+        # Lookahead stops at walls: facing LEFT from (10, 2) only reaches (10, 1)
+        env.pacman_pos, env.pacman_dir = (10, 2), LEFT
+        self.assertEqual(env._ambusher_target((1, 13)), (10, 1))
+        # When close, the Ambusher targets Pacman directly
+        env.pacman_pos, env.pacman_dir = (10, 4), RIGHT
+        self.assertEqual(env._ambusher_target((10, 6)), (10, 4))
 
-        # 2. Frightened ghost collision: Ghost eaten
-        state = {
-            "pacman_pos": (4, 4),
+    def test_ambusher_moves_toward_ambush_cell(self):
+        env = GymPacmanEnv(maze_size=15, ghost_speed=1.0)
+        env.reset(seed=0, options={"state": {
+            "pacman_pos": (13, 3),
             "pacman_dir": RIGHT,
-            "ghosts": [
-                {"name": "Blinky", "pos": (4, 5), "dir": LEFT, "start_pos": (7, 7)},
-            ],
-            "dots": [(1, 2)], # keep some dot so level doesn't reset
-            "power_pellets": [],
-            "score": 0,
-            "lives": 3,
-            "frightened_timer": 20,
-        }
-        env.reset(options={"state": state})
-        
-        # Step: Pacman moves RIGHT to (4, 5). Blinky is frightened so moves half speed (doesn't move on step 1 of frightened mode if odd step, or we manually check).
-        # Pacman lands on Blinky.
-        obs, reward, term, trunc, info = env.step(RIGHT)
-        self.assertEqual(env.lives, 3) # no life lost
-        self.assertEqual(env.score, 200) # ate ghost
-        # Blinky should be reset to start_pos
-        self.assertEqual(env.ghosts[0]["pos"], (7, 7))
+            "ghost_positions": [(1, 1), (1, 13)],
+            "pellets": [(1, 2)],
+        }})
+        target = env._ambusher_target(env.ghost_positions[AMBUSHER])
+        self.assertEqual(target, (13, 7))
+        before = env._dist[env.ghost_positions[AMBUSHER]][target]
+        env.step(DOWN)  # Wall below: Pacman stays put and keeps facing RIGHT
+        after = env._dist[env.ghost_positions[AMBUSHER]][target]
+        self.assertEqual(after, before - 1)
 
-    def test_level_clear(self):
-        """Test level reset when all dots and pellets are cleared."""
-        env = GymPacmanEnv()
-        state = {
-            "pacman_pos": (4, 4),
-            "pacman_dir": RIGHT,
-            "ghosts": [],
-            "dots": [(4, 5)],
-            "power_pellets": [],
-            "score": 0,
-            "lives": 3,
-            "frightened_timer": 0,
-        }
-        env.reset(options={"state": state})
+    def test_truncation(self):
+        env = GymPacmanEnv(maze_size=7, ghost_speed=0.0, max_steps=5)
+        env.reset(seed=0)
+        for i in range(5):
+            _, _, term, trunc, info = env.step(UP if i % 2 else DOWN)
+        self.assertFalse(term)
+        self.assertTrue(trunc)
+        self.assertEqual(info["termination_reason"], "max_steps")
 
-        # Eat the last dot
-        obs, reward, term, trunc, info = env.step(RIGHT)
-        # Should get dot score + level clear score (10 + 500 = 510)
-        self.assertEqual(env.score, 510)
-        # Entities reset
-        self.assertEqual(env.pacman_pos, (13, 7))
-        # Dots and pellets regenerated
-        self.assertGreater(len(env.dots), 0)
-        self.assertEqual(len(env.power_pellets), len(POWER_PELLETS_START))
+    def test_seed_determinism(self):
+        def rollout(seed):
+            env = GymPacmanEnv(maze_size=11)
+            obs, _ = env.reset(seed=seed)
+            rng = np.random.default_rng(123)
+            trace = []
+            for _ in range(100):
+                obs, reward, term, trunc, _ = env.step(int(rng.integers(4)))
+                trace.append((tuple(obs["pacman_position"]), obs["ghost_positions"].tobytes(), reward))
+                if term or trunc:
+                    break
+            return trace
+
+        self.assertEqual(rollout(7), rollout(7))
+
+    def test_render_modes(self):
+        self.assertIsNone(GymPacmanEnv().render())
+        for size in SIZES:
+            with self.subTest(size=size):
+                frame = GymPacmanEnv(render_mode="rgb_array", maze_size=size).render()
+                self.assertEqual(frame.dtype, np.uint8)
+                self.assertEqual(frame.ndim, 3)
+                self.assertEqual(frame.shape[2], 3)
+
+                text = GymPacmanEnv(render_mode="ansi", maze_size=size).render()
+                lines = text.strip("\n").split("\n")
+                self.assertEqual(len(lines), size)
+                self.assertEqual(text.count("P"), 1)
+                self.assertEqual(text.count("C"), 1)
+                self.assertEqual(text.count("A"), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

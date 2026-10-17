@@ -1,15 +1,11 @@
-# envpack
+# envpack: Pacman (`envpack/Pacman-v0`)
 
-A collection of classic game environments for Gymnasium.
-
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+A Gymnasium environment for a simplified Pacman. Collect every pellet in the maze while avoiding two ghosts. The observation is the full game state, not pixels, so you choose your own features.
 
 ## Installation
 
-To install the environments, you can use pip:
-
 ```bash
-pip install git+https://github.com/rax85/envpack.git
+pip install -e .
 ```
 
 ## Usage
@@ -18,525 +14,47 @@ pip install git+https://github.com/rax85/envpack.git
 import gymnasium as gym
 import envpack
 
-# To run 2048
-env = gym.make('envpack/2048-v0')
-
-# To run Snake
-# env = gym.make('envpack/Snake-v0')
-
-# To run Tetris
-# env = gym.make('envpack/Tetris-v0')
-
-# To run Sudoku
-# env = gym.make('envpack/Sudoku-v0')
-
-# To run Raptor
-# env = gym.make('envpack/Raptor-v0')
-
-# To run Checkers
-# env = gym.make('envpack/Checkers-v0')
-
-# To run Tron
-# env = gym.make('envpack/Tron-v0')
-
-# To run Air Hockey
-# env = gym.make('envpack/AirHockey-v0')
-
-# To run Racing
-# env = gym.make('envpack/Racing-v0')
-
-# To run Doom
-# env = gym.make('envpack/Doom-v0')
-
-# To run Paratrooper
-# env = gym.make('envpack/Paratrooper-v0')
-
-# To run Pacman
-# env = gym.make('envpack/Pacman-v0')
-
-# To run Platformer
-# env = gym.make('envpack/Platformer-v0')
-
-# To run Tower Defense
-# env = gym.make('envpack/TowerDefense-v0')
-
-# To run Asteroids
-# env = gym.make('envpack/Asteroids-v0')
-
-# To run Space Invaders
-# env = gym.make('envpack/SpaceInvaders-v0')
-
-# To run Drone
-# env = gym.make('envpack/Drone-v0')
-
-
-
-# To run Street Fighter
-# env = gym.make('envpack/StreetFighter-v0')
-
-# To run Tank Combat
-# env = gym.make('envpack/TankCombat-v0')
-
-# To run Gravity Duel
-# env = gym.make('envpack/GravityDuel-v0')
-
-# To run Artillery Forts
-# env = gym.make('envpack/ArtilleryForts-v0')
-
-# To run Battleship
-# env = gym.make('envpack/Battleship-v0')
-
-
-observation, info = env.reset()
-done = False
-
-while not done:
-    action = env.action_space.sample()  # Take a random action
-    observation, reward, terminated, truncated, info = env.step(action)
-    done = terminated or truncated
-
-env.close()
+env = gym.make("envpack/Pacman-v0", maze_size=7)  # 7, 11 or 15
+obs, info = env.reset(seed=0)
+obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
 ```
 
----
+To watch a random agent play, with the live state shown next to the game, run `python play_random.py --size 11`.
 
-## Game Environments
+## Environment
 
-## 👤 Single Player Games
+**Parameters**
+- `maze_size`: `7`, `11` or `15`. Default `15`.
+- `ghost_speed`: the probability that a ghost moves on a given step. Default `0.8`.
+- `max_steps`: default `200`, `500` or `1000`, depending on maze size.
+- `render_mode`: `None`, `"rgb_array"` or `"ansi"`.
 
-### 1. 2048 (`envpack/2048-v0`)
+**Action Space**: `Discrete(4)`
+- `0`: Up, `1`: Down, `2`: Left, `3`: Right.
+- Moving into a wall leaves Pacman in place.
 
-A Gymnasium environment for the classic 2048 tile-merging game played on a 4x4 grid.
+**Observation Space**: `Dict` containing the following keys. They are the same for every maze size, and positions are `(row, col)`.
+- `'walls'`: `Box(0, 1, (H, W), int8)`, where 1 is a wall.
+- `'pellets'`: `Box(0, 1, (H, W), int8)`, where 1 is a pellet not yet eaten.
+- `'pacman_position'`: `Box(2,)`, Pacman's cell.
+- `'pacman_direction'`: `Discrete(4)`, the last direction Pacman moved.
+- `'ghost_positions'`: `Box(2, 2)`. Row 0 is the Chaser and row 1 is the Ambusher.
 
-*   **Action Space**: `Discrete(4)`:
-    *   `0`: Up, `1`: Down, `2`: Left, `3`: Right
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(4, 4)` representing tile values.
-    *   `'valid_mask'`: `Box(4,)` binary mask of valid moves.
-    *   `'total_score'`: `Box(1,)` representing the accumulated score.
-*   **Rewards**: Sum of merged tile values. Invalid moves yield `-32`.
-*   **Gameplay**:
+**Mechanics**
+- There is a pellet on every open cell except Pacman's start cell. Pacman has one life.
+- **Chaser**: follows the shortest path to Pacman.
+- **Ambusher**: heads for the cell a few steps ahead of Pacman in the direction it is moving (2, 3 or 4 steps, by maze size). It chases Pacman directly once it gets close.
+- When a ghost has several equally good moves, it picks one at random. The randomness is seeded by `reset(seed=...)`.
+- **Rewards**: `+10` per pellet, `-0.01` per step, `-100` when caught, `+500` for clearing the maze.
+- `terminated` is true when Pacman is caught or all pellets are eaten. `truncated` is true when the episode reaches `max_steps`.
+- **Info**: `score`, `steps`, `pellets_eaten`, `pellets_total`, `completion`, `termination_reason` (`"caught"`, `"cleared"`, `"max_steps"` or `None`) and `action_mask`.
 
-![2048 Gameplay](screenshots/screenshot.gif)
-
-### 2. Snake (`envpack/Snake-v0`)
-
-A Gymnasium environment for the classic Snake game played on a 10x10 grid.
-
-*   **Action Space**: `Discrete(4)`:
-    *   `0`: Up, `1`: Down, `2`: Left, `3`: Right
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(10, 10)` representing the board (0: empty, 1: food, 2: snake head, 3: snake body).
-    *   `'valid_mask'`: `Box(4,)` binary mask of valid moves (direct backward folding is masked out).
-    *   `'total_score'`: `Box(1,)` representing the number of food items eaten.
-*   **Rewards**: `+1.0` for eating food, `-0.01` step penalty, and `-1.0` for wall/self collision.
-*   **Gameplay**:
-
-![Snake Gameplay](screenshots/snake_screenshot.gif)
-
-### 3. Tetris (`envpack/Tetris-v0`)
-
-A Gymnasium environment for the classic Tetris block-falling puzzle game played on a 10x20 grid.
-
-*   **Action Space**: `Discrete(5)`:
-    *   `0`: Move Left, `1`: Move Right, `2`: Rotate Clockwise, `3`: Soft Drop (Down 1), `4`: Hard Drop (Instant drop & lock)
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(20, 10)` representing the board (0: empty, 1..7: landed tetromino blocks, 8: active falling piece blocks).
-    *   `'valid_mask'`: `Box(5,)` binary mask of valid actions.
-    *   `'total_score'`: `Box(1,)` representing the accumulated score.
-*   **Rewards**: Small survival reward of `+0.01` per step. Clearing lines yields: `0.1` (1 line), `0.3` (2 lines), `0.5` (3 lines), `1.0` (4 lines). Game over yields `-1.0`.
-*   **Gameplay**:
-
-![Tetris Gameplay](screenshots/tetris_screenshot.gif)
-
-### 4. Sudoku (`envpack/Sudoku-v0`)
-
-A Gymnasium environment for solving standard 9x9 Sudoku puzzles.
-
-*   **Action Space**: `MultiDiscrete([9, 9, 10])`:
-    *   `row` in `[0..8]`: Target row coordinate to edit.
-    *   `col` in `[0..8]`: Target column coordinate to edit.
-    *   `value` in `[0..9]`: Digit to place (`1..9`), or `0` to clear/delete the digit.
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(9, 9)` representing current cell digits.
-    *   `'given_mask'`: `Box(9, 9)` representing fixed clues (1 if given clue, 0 if editable).
-    *   `'valid_mask'`: `Box(9, 9, 10)` representing safe (conflict-free) digits that can be placed in each cell.
-    *   `'total_score'`: `Box(1,)` representing number of cells matching target solution.
-*   **Rewards**: `+1.0` for placing a correct digit, `-1.0` for removing/replacing a correct digit, `-0.1` for constraint conflict violations, and `-0.01` step penalty. Completion yields a `+10.0` bonus.
-*   **Gameplay**:
-
-![Sudoku Gameplay](screenshots/sudoku_screenshot.gif)
-
-### 5. Raptor (`envpack/Raptor-v0`)
-
-A Gymnasium environment for a classic vertical scrolling shooter game inspired by Raptor: Call of the Shadows.
-
-*   **Action Space**: `Discrete(5)`:
-    *   `0`: Stay, `1`: Move Left, `2`: Move Right, `3`: Move Up, `4`: Move Down (ship boundaries are limited to the lower half of the screen)
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(20, 15)` representing the grid (0: empty, 1: player ship, 2: player laser, 3: basic enemy, 4: shooter enemy, 5: enemy bullet, 6: coin).
-    *   `'valid_mask'`: `Box(5,)` binary mask of valid movements.
-    *   `'total_score'`: `Box(1,)` representing the accumulated score.
-    *   `'shield'`: `Box(1,)` representing the player's shield health level `[0..100]`.
-*   **Rewards**: Survival reward of `+0.05` per step. Destroying a basic enemy yields `+1.0` (score +100), destroying a shooter enemy yields `+2.5` (score +250). Collecting gold coins yields `+2.0` (score +500, credits +$50). Taking damage from enemy bullets yields `-1.5` (-10% shield), taking damage from direct ship collisions yields `-5.0` (-30% shield). Dying yields `-10.0` death penalty and terminates the episode.
-*   **Gameplay**:
-
-![Raptor Gameplay](screenshots/raptor_screenshot.gif)
-
-### 6. Doom (`envpack/Doom-v0`)
-
-A pseudo-3D first-person shooter Gymnasium environment using JIT-accelerated raycasting.
-
-*   **Action Space**: `Discrete(5)`:
-    *   `0`: Turn Left, `1`: Turn Right, `2`: Move Forward, `3`: Move Backward, `4`: Shoot
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(240, 320, 3)` representing the first-person 3D raycasted view.
-    *   `'valid_mask'`: `Box(5,)` binary mask of valid actions.
-    *   `'health'`: `Box(1,)` representing the player's health `[0..100]`.
-    *   `'ammo'`: `Box(1,)` representing the player's remaining ammunition `[0..99]`.
-    *   `'score'`: `Box(1,)` representing the current score (kills).
-*   **Rewards**:
-    *   Small step penalty of `-0.01`.
-    *   Defeating an enemy yields `+10.0` (score +100), hitting an enemy yields `+2.0`.
-    *   Picking up health/ammo packs yields `+2.0`.
-    *   Getting hit by an enemy yields `-1.0`.
-    *   Clearing all enemies (victory) yields `+20.0`.
-    *   Dying yields `-10.0`.
-*   **Gameplay**:
-
-![Doom Gameplay](screenshots/doom_screenshot.gif)
-
-### 7. Paratrooper (`envpack/Paratrooper-v0`)
-
-A Gymnasium environment for the classic DOS-style Paratrooper arcade game.
-
-*   **Action Space**: `Discrete(4)`:
-    *   `0`: Turn Left, `1`: Turn Right, `2`: Shoot, `3`: Stay
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(300, 400, 3)` representing the screen view.
-    *   `'valid_mask'`: `Box(4,)` binary mask of valid actions.
-    *   `'score'`: `Box(1,)` representing the accumulated score.
-    *   `'landed_left'`: `Box(1,)` representing the number of paratroopers landed on the left side `[0..4]`.
-    *   `'landed_right'`: `Box(1,)` representing the number of paratroopers landed on the right side `[0..4]`.
-*   **Rewards**:
-    *   Shooting a helicopter: `+10.0` (score +10)
-    *   Shooting a paratrooper body: `+5.0` (score +5)
-    *   Shooting a parachute canopy: `+0.0` (score +0, but they fall fast and splat)
-    *   Shooting a bomb: `+15.0` (score +15)
-    *   Firing penalty: `-0.01` to discourage infinite shooting
-    *   Game over (turret destroyed by bomb or paratroopers): `-50.0`
-*   **Gameplay**:
-
-![Paratrooper Gameplay](screenshots/paratrooper_screenshot.gif)
-
-### 8. Pacman (`envpack/Pacman-v0`)
-
-A Gymnasium environment for the classic Pacman arcade maze crawler.
-
-*   **Action Space**: `Discrete(4)`:
-    *   `0`: Up, `1`: Down, `2`: Left, `3`: Right
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(300, 400, 3)` representing the RGB screen view.
-    *   `'valid_mask'`: `Box(4,)` binary mask of valid actions.
-    *   `'score'`: `Box(1,)` representing accumulated score.
-    *   `'lives'`: `Box(1,)` representing remaining lives `[0..3]`.
-*   **Mechanics**:
-    *   Navigate a 15x15 wall grid maze to eat dots (+10 points) and power pellets (+50 points).
-    *   **Ghost AI**: 4 ghosts with distinct target targeting heuristics (Blinky, Pinky, Inky, Clyde).
-    *   **Frightened Mode**: Eating a power pellet turns ghosts blue/frightened for 40 steps, reducing their speed and allowing Pacman to eat them for +200 points.
-*   **Gameplay**:
+**Gameplay** (random agent, 11×11)
 
 ![Pacman Gameplay](screenshots/pacman_screenshot.gif)
 
-### 9. Platformer (`envpack/Platformer-v0`)
+## Tests
 
-A Gymnasium environment for a side-scrolling 2D platformer.
-
-*   **Action Space**: `Discrete(4)`:
-    *   `0`: Idle, `1`: Move Left, `2`: Move Right, `3`: Jump
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(300, 400, 3)` representing the screen view with camera tracking.
-    *   `'valid_mask'`: `Box(4,)` binary mask of valid actions.
-    *   `'level_progress'`: `Box(1,)` representing normalized level completion.
-*   **Physics & Platforming**:
-    *   Horizontal velocity accumulation (inertia), drag, and vertical gravity.
-    *   Strict AABB solid block collision resolution.
-    *   Collect gold coins (+10 points) and dodge spikes (death and level reset). Reach the flag at `x=750` to win (+50 reward).
-*   **Gameplay**:
-
-![Platformer Gameplay](screenshots/platformer_screenshot.gif)
-
-### 10. Tower Defense (`envpack/TowerDefense-v0`)
-
-A Gymnasium environment for a wave-based Tower Defense game.
-
-*   **Action Space**: `Discrete(13)`:
-    *   `0`: Idle
-    *   `1-6`: Build/Upgrade Gun Tower at slots 0-5 (costs 50 gold)
-    *   `7-12`: Build/Upgrade Laser Tower at slots 0-5 (costs 80 gold)
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(300, 400, 3)` representing the path, towers, and marching enemies.
-    *   `'valid_mask'`: `Box(13,)` binary mask of valid actions.
-    *   `'health'`: `Box(1,)` representing base health `[0..20]`.
-    *   `'gold'`: `Box(1,)` representing gold bank.
-*   **Tower & Wave Mechanics**:
-    *   Enemies spawn in waves, walking along an S-shaped path. Reaching the end drains 1 life.
-    *   Gun towers fire projectile bullets. Laser towers project a continuous target-locked energy beam.
-    *   Upgrading towers increases fire range and damage.
-*   **Gameplay**:
-
-![Tower Defense Gameplay](screenshots/tower_defense_screenshot.gif)
-
-### 11. Asteroids (`envpack/Asteroids-v0`)
-
-A Gymnasium environment for a wrapping space Asteroids miner.
-
-*   **Action Space**: `Discrete(5)`:
-    *   `0`: Idle, `1`: Rotate Left, `2`: Rotate Right, `3`: Thrust, `4`: Shoot
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(300, 400, 3)` representing the space field.
-    *   `'valid_mask'`: `Box(5,)` binary mask of valid actions.
-    *   `'score'`: `Box(1,)` representing accumulated score.
-    *   `'lives'`: `Box(1,)` representing remaining lives `[0..3]`.
-*   **Spaceship & Debris Physics**:
-    *   Newtonian vector acceleration with friction damping (drag = 0.99).
-    *   Toroidal wrap-around bounds. Fired lasers break Large asteroids (radius 24) into Medium (radius 12), which break into Small (radius 6).
-    *   Splitting asteroids drops floating gems (+5 points) which must be collected. Collisions with asteroids deduct 1 life.
-*   **Gameplay**:
-
-![Asteroids Gameplay](screenshots/asteroids_screenshot.gif)
-
-### 12. Space Invaders (`envpack/SpaceInvaders-v0`)
-
-A Gymnasium environment for the classic arcade game Space Invaders.
-
-*   **Action Space**: `Discrete(4)`:
-    *   `0`: Stay, `1`: Move Left, `2`: Move Right, `3`: Shoot
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(300, 400, 3)` representing the RGB screen view.
-    *   `'valid_mask'`: `Box(4,)` binary mask of valid actions (shooting is disabled while on laser cooldown).
-    *   `'score'`: `Box(1,)` representing the accumulated score.
-    *   `'lives'`: `Box(1,)` representing remaining lives `[0..3]`.
-*   **Grid & Shooting Mechanics**:
-    *   Destroy waves of marching invaders (40 per wave) that increase in speed as their numbers dwindle.
-    *   Dodge randomly fired enemy bullets and shelter behind 3 destructible bunkers (each split into 4 segments with 3 HP each).
-    *   Invaders shift down and reverse direction when hitting boundaries. Reach player level or deplete all lives for Game Over.
-*   **Gameplay**:
-
-![Space Invaders Gameplay](screenshots/space_invaders_screenshot.gif)
-
-### 13. Fixed-Wing Autopilot Drone (`envpack/Drone-v0`)
-
-A Gymnasium environment for a physically accurate fixed-wing drone flight simulator.
-
-*   **Action Space**: `Box(low=[0.0, -1.0, -1.0, -1.0], high=[1.0, 1.0, 1.0, 1.0], shape=(4,), dtype=np.float32)` representing:
-    *   `action[0]`: Throttle control `[0.0, 1.0]`.
-    *   `action[1]`: Elevator pitch rate control `[-1.0, 1.0]` (nose up/down).
-    *   `action[2]`: Aileron roll rate control `[-1.0, 1.0]` (bank left/right).
-    *   `action[3]`: Rudder yaw rate control `[-1.0, 1.0]` (yaw left/right).
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(12,)` containing:
-        *   `[x, y, z, vx, vy, vz, pitch, roll, yaw, fuel, dist_to_target, heading_error]` (where `y` is altitude).
-    *   `'valid_mask'`: `Box(4,)` binary mask of valid actions (always `[1, 1, 1, 1]`).
-*   **Flight Dynamics & Mechanics**:
-    *   Physically accurate aerodynamic simulation: lift, drag (parasitic and lift-induced drag), thrust, and gravity. Includes wing stall when the Angle of Attack (AoA) exceeds 16 degrees.
-    *   Take off from Runway 1 and navigate through a procedurally generated 2000m x 2000m landscape heightmap to perform a flat, soft landing on Runway 2.
-    *   Crashes (touching the ground at high speeds, rolled wings, or outside the target runway) instantly terminate the simulation. Lower fuel consumption is rewarded.
-    *   A minimum Above Ground Level (AGL) of 15m is penalized if violated while away from the airstrips.
-*   **Gameplay / Visualization**:
-    *   Renders a 3D wireframe chase-view looking ahead along the drone's flight path, a cockpit flight HUD (Speed, Alt/AGL, Pitch/Roll ladder, Fuel), and a 2D overview map.
-*   **Gameplay**:
-
-![Drone Gameplay](screenshots/drone_screenshot.gif)
-
----
-
-
-
-## 👥 Two Player Games
-
-### 1. Checkers (`envpack/Checkers-v0`)
-
-A Gymnasium environment for two-player American Checkers (Draughts) played on an 8x8 checkerboard.
-
-*   **Action Space**: `MultiDiscrete([8, 8, 8, 8])`:
-    *   `[from_row, from_col, to_row, to_col]` representing starting and landing squares.
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(8, 8)` representing the board (0: empty, 1: P1 normal, 2: P1 king, 3: P2 normal, 4: P2 king).
-    *   `'valid_mask'`: `Box(8, 8, 8, 8)` representing binary validity of moves.
-    *   `'current_player'`: `Discrete(3)` (1 or 2).
-*   **Rewards**: Zero-sum rewards from **Player 1's perspective**:
-    *   `+1.0` when Player 1 captures a Player 2 piece (and `-1.0` when Player 2 captures).
-    *   `+0.5` when Player 1 promotes a piece to King (and `-0.5` when Player 2 promotes).
-    *   `+10.0` when Player 1 wins the game (and `-10.0` when Player 2 wins).
-    *   Invalid action attempts yield `-0.1` penalty, and steps have a small `-0.01` penalty.
-*   **Stalemate & Multi-jumps**:
-    *   Standard American Checkers rules apply: jump captures are mandatory. If a multi-jump is available, the active jumper piece must continue jumping and the turn does not switch.
-*   **Gameplay**:
-
-![Checkers Gameplay](screenshots/checkers_screenshot.gif)
-
-### 2. Tron Light Cycles (`envpack/Tron-v0`)
-
-A Gymnasium environment for two-player simultaneous-move Tron Light Cycles played on a 30x30 grid.
-
-*   **Action Space**: `MultiDiscrete([4, 4])`:
-    *   `action[0]`: Player 1 action (`0`: Up, `1`: Down, `2`: Left, `3`: Right)
-    *   `action[1]`: Player 2 action (`0`: Up, `1`: Down, `2`: Left, `3`: Right)
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(30, 30)` representing the grid (0: empty, 1: P1 Head, 2: P1 Trail, 3: P2 Head, 4: P2 Trail).
-    *   `'valid_mask'`: `Box(2, 4)` representing binary validity of moves (direct opposite turns are masked out).
-    *   `'total_score'`: `Box(2,)` representing wins for P1 and P2.
-*   **Rewards**: Zero-sum outcome rewards:
-    *   `+10.0` when Player 1 wins (Player 2 crashed).
-    *   `-10.0` when Player 2 wins (Player 1 crashed).
-    *   `0.0` for a head-on collision or joint crash (draw).
-    *   `+0.01` survival reward per step for both players (net zero-sum is preserved).
-*   **Gameplay**:
-
-![Tron Light Cycles Gameplay](screenshots/tron_screenshot.gif)
-
-### 3. Air Hockey (`envpack/AirHockey-v0`)
-
-A Gymnasium environment for two-player continuous 2D physics-based Air Hockey.
-
-*   **Action Space**: `Box(low=-1.0, high=1.0, shape=(2, 2))` representing:
-    *   `action[0]`: Player 1 mallet acceleration/displacement `[dx, dy]`.
-    *   `action[1]`: Player 2 mallet acceleration/displacement `[dx, dy]`.
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(12,)` representing normalized coordinates and velocities:
-        *   `[p1_x, p1_y, p1_vx, p1_vy, p2_x, p2_y, p2_vx, p2_vy, puck_x, puck_y, puck_vx, puck_vy]`.
-    *   `'total_score'`: `Box(2,)` representing goals scored.
-*   **Rewards**:
-    *   `+1.0` when Player 1 scores in Player 2's goal (and `-1.0` when Player 2 scores).
-    *   `+10.0` win bonus when Player 1 reaches 7 goals (and `-10.0` loss penalty when Player 2 reaches 7).
-*   **Gameplay**:
-
-![Air Hockey Gameplay](screenshots/air_hockey_screenshot.gif)
-
-### 4. Racing Duel (`envpack/Racing-v0`)
-
-A Gymnasium environment for two-player simultaneous manual-transmission car racing with procedural racetracks and realistic RWD physics.
-
-*   **Action Space**: `Dict` containing:
-    *   `'p1_steer_throttle'`: `Box(low=[-1.0, -1.0], high=[1.0, 1.0], shape=(2,), dtype=np.float32)` where `action[0]` is steering (`-1.0` Left to `1.0` Right), and `action[1]` is throttle/brake (`-1.0` Full brake to `1.0` Full throttle).
-    *   `'p1_gear'`: `Discrete(3)` gear shift selector (`0`: Hold, `1`: Shift down, `2`: Shift up).
-    *   `'p2_steer_throttle'`: `Box(low=[-1.0, -1.0], high=[1.0, 1.0], shape=(2,), dtype=np.float32)`.
-    *   `'p2_gear'`: `Discrete(3)`.
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(16,)` containing:
-        *   `[x, y, vx, vy, heading, gear, rpm, progress]` for both Player 1 and Player 2 (all normalized).
-    *   `'total_score'`: `Box(2,)` representing lap wins.
-*   **Engine & Gearbox**:
-    *   6-speed manual gearbox with real gear ratios. Torque curve peaks at 550 Nm between 1850 and 5800 RPM. Redline starts at 7200 RPM. Exceeding redline limits power and triggers overrev engine drag.
-    *   Features automated clutch-slipping launch assist below 800 RPM to prevent engine stalling.
-*   **RWD Slip Dynamics**:
-    *   Realistic lateral tire slip (Pacejka/bicycle models). High throttle inputs consume tire traction circles, causing the rear wheels to lose traction, slide sideways, and trigger oversteer drifting.
-*   **Procedural Track spline**:
-    *   Cubic spline loops are generated on reset. Going off-track (onto grass) drops the tire grip coefficient from 1.0 to 0.4 and penalizes the vehicle.
-*   **Gameplay**:
-
-![Racing Duel Gameplay](screenshots/racing_screenshot.gif)
-
-### 5. Street Fighter (`envpack/StreetFighter-v0`)
-
-A Gymnasium environment for a simultaneous 2-player Street Fighter-style fighting game.
-
-*   **Action Space**: `MultiDiscrete([8, 8])` representing:
-    *   `action[0]`: Player 1 (Ryu) action.
-    *   `action[1]`: Player 2 (Ken) action.
-    *   Actions: `0`: IDLE, `1`: WALK_LEFT, `2`: WALK_RIGHT, `3`: JUMP, `4`: CROUCH, `5`: PUNCH, `6`: KICK, `7`: SPECIAL_FIREBALL
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(300, 400, 3)` representing the RGB screen view.
-    *   `'valid_mask'`: `Box(2, 8)` binary mask of valid actions.
-    *   `'health'`: `Box(2,)` representing players' health `[0..100]`.
-    *   `'total_score'`: `Box(2,)` representing wins for Ryu and Ken.
-*   **Combat Mechanics**:
-    *   **PUNCH**: reach 25, damage 5, hitstun 8 steps.
-    *   **KICK**: reach 35, damage 8, hitstun 12 steps.
-    *   **SPECIAL_FIREBALL**: projects a projectile (cyan for Ryu, orange for Ken) moving at speed 5. Deals 10 damage. Fireballs cancel each other out on collision.
-    *   **Blocking**: holding backward relative to opponent (moving away) or crouching and holding backward blocks incoming high/low attacks, reducing damage to 0 and preventing hitstun.
-    *   **Combos**: consecutive hits within 15 steps increment the combo counter, shown on screen (e.g. "3 HIT COMBO!").
-    *   **Match Rules**: first to 2 round wins wins the match.
-*   **Gameplay**:
-
-![Street Fighter Gameplay](screenshots/street_fighter_screenshot.gif)
-
-### 6. Tank Combat (`envpack/TankCombat-v0`)
-
-A Gymnasium environment for two-player simultaneous Tank Combat in a grid maze.
-
-*   **Action Space**: `MultiDiscrete([5, 5])` representing:
-    *   `action[0]`: Player 1 action.
-    *   `action[1]`: Player 2 action.
-    *   Actions: `0`: IDLE, `1`: Rotate Left, `2`: Rotate Right, `3`: Move Forward, `4`: Shoot.
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(18,)` vector representing coordinates and velocities:
-        *   `[p1_x, p1_y, cos(p1_angle), sin(p1_angle), p1_hp, p2_x, p2_y, cos(p2_angle), sin(p2_angle), p2_hp, b1_x, b1_y, b1_vx, b1_vy, b2_x, b2_y, b2_vx, b2_vy]`.
-    *   `'total_score'`: `Box(2,)` representing match score (wins).
-*   **Combat Mechanics**:
-    *   **Movement**: Sliding wall collision in a 10x10 maze grid.
-    *   **Bullets**: sub-step precision, bounce off walls up to 2 times, deal 1 damage to tanks on hit. Respawn on HP depletion.
-    *   **HP**: Max 3 HP, drawn as heart HUD symbols. First to 5 wins the match.
-*   **Gameplay**:
-
-![Tank Combat Gameplay](screenshots/tank_combat_screenshot.gif)
-
-### 7. Gravity Duel (`envpack/GravityDuel-v0`)
-
-A Gymnasium environment for two-player continuous Gravity Duel with a central gravity star.
-
-*   **Action Space**: `MultiDiscrete([5, 5])` representing:
-    *   `action[0]`: Player 1 action.
-    *   `action[1]`: Player 2 action.
-    *   Actions: `0`: IDLE, `1`: Rotate Left, `2`: Rotate Right, `3`: Thrust, `4`: Fire Missile.
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(24,)` representing:
-        *   `[p1_x, p1_y, p1_vx, p1_vy, cos(p1_angle), sin(p1_angle), p1_hp, p2_x, p2_y, p2_vx, p2_vy, cos(p2_angle), sin(p2_angle), p2_hp, star_x, star_y, m1_x, m1_y, m1_vx, m1_vy, m2_x, m2_y, m2_vx, m2_vy]`.
-    *   `'total_score'`: `Box(2,)` representing match score (wins).
-*   **Combat & Gravity Mechanics**:
-    *   **Newtonian Thrusters**: Inertial sliding and thrust velocity vectors.
-    *   **Warp Wrap-around**: Ships wrap around boundaries on all screen edges.
-    *   **Concentric Star Gravity**: A massive sun in the center pulls ships and missiles with $1/r^2$ gravity. Colliding with the sun instantly absorbs/destroys the ship.
-*   **Gameplay**:
-
-![Gravity Duel Gameplay](screenshots/gravity_duel_screenshot.gif)
-
-### 8. Artillery Forts (`envpack/ArtilleryForts-v0`)
-
-A Gymnasium environment for two-player simultaneous real-time Artillery Forts.
-
-*   **Action Space**: `MultiDiscrete([6, 6])` representing:
-    *   `action[0]`: Player 1 action.
-    *   `action[1]`: Player 2 action.
-    *   Actions: `0`: IDLE, `1`: Aim Up, `2`: Aim Down, `3`: Power Up, `4`: Power Down, `5`: Fire.
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(49,)` containing:
-        *   `[p1_y, p1_angle, p1_power, p1_hp, p1_cooldown, p2_y, p2_angle, p2_power, p2_hp, p2_cooldown, wind, s1_x, s1_y, s1_vx, s1_vy, s2_x, s2_y, s2_vx, s2_vy]` and 30 sampled terrain heights.
-    *   `'total_score'`: `Box(2,)` representing wins.
-*   **Artillery & Cratering Mechanics**:
-    *   **Wind Resistance**: Horizontal wind vectors alter trajectory paths.
-    *   **Procedural Crater Cratering**: Shell impacts explode and excavate terrain, creating circular holes in the mountain line.
-    *   **Dynamic Landslide Fall**: Forts fall vertically down if their supporting terrain is cleared.
-*   **Gameplay**:
-
-![Artillery Forts Gameplay](screenshots/artillery_forts_screenshot.gif)
-
-### 9. Battleship (`envpack/Battleship-v0`)
-
-A Gymnasium environment for the classic turn-based two-player board game Battleship.
-
-*   **Action Space**: `MultiDiscrete([8, 8])` representing targeted coordinate `[row, col]` to fire a shot at on the opponent's grid.
-*   **Observation Space**: `Dict` containing:
-    *   `'observation'`: `Box(8, 8)` representing the grid state from the current active player's perspective (0: empty/unknown, 1: own intact ship, 2: own ship hit by opponent, 3: own empty cell hit by opponent, 4: opponent ship hit by current player, 5: opponent empty cell hit by current player).
-    *   `'valid_mask'`: `Box(8, 8)` binary mask of valid actions (cells that have not been targeted yet).
-    *   `'current_player'`: `Discrete(3)` active player ID (1 or 2).
-    *   `'ships_left'`: `Box(2,)` representing remaining intact ship cells `[P1_remaining, P2_remaining]`.
-*   **Gameplay & Setup Rules**:
-    *   5 standard ships (Carrier 5, Battleship 4, Destroyer 3, Submarine 3, Patrol Boat 2) are placed randomly without overlapping during reset.
-    *   Active players take turns shooting at the opponent's board. Successful hits award `+1.0` and allow checking details. Sinking all opponent ship cells (17 cells total) wins the game (`+10.0` reward).
-*   **Gameplay**:
-
-![Battleship Gameplay](screenshots/battleship_screenshot.gif)
-
-
+```bash
+python -m unittest envpack.envs.game_pacman.env_test -v
+```

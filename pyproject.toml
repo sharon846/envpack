@@ -5,10 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "envpack"
 version = "0.0.1"
-description = "A collection of game environments for Gymnasium."
+description = "A simplified Pacman environment for Gymnasium."
 readme = "README.md"
 requires-python = ">=3.11"
-license = "Apache-2.0"
 authors = [
     {name = "Rakesh Iyer", email = "your.email@example.com"}
 ]
@@ -27,7 +26,6 @@ dependencies = [
     "numpy>=2.3.5",
     "pillow>=11.3.0",
     "matplotlib>=3.10.8",
-    "numba>=0.63.1",
 ]
 
 [project.urls]
